@@ -83,7 +83,7 @@ if not st.session_state.logged_in:
             nu = st.text_input("Yeni Kullanıcı Adı")
             nn = st.text_input("Ad Soyad")
             np = st.text_input("Yeni Şifre", type="password")
-            if st.button("Kayıt Ol", use_container_width=True):
+            if st.button("Kayıt Talebi Gönder", use_container_width=True):
                 u_df = pd.read_csv(USER_DB)
                 if nu in u_df['Username'].values: st.error("Bu kullanıcı adı alınmış.")
                 else:
