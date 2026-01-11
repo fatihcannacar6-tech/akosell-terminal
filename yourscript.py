@@ -136,25 +136,38 @@ else:
                 pd.concat([others, edited]).to_csv(PORT_DB, index=False)
                 st.rerun()
 
-    # --- 9. ANALİZLER (GERÇEK VERİ) ---
+   # --- 9. ANALİZLER (GERÇEK VERİ) ---
     elif "ANALİZLER" in menu:
         st.title("📈 Portföy Analitiği")
         if not my_port.empty:
             col1, col2 = st.columns(2)
+            
             with col1:
                 st.write("### Varlık Dağılımı (Adet)")
-                st.bar_chart(my_port.set_index('Kod')['Adet'])
+                # Bar chart için veriyi hazırlıyoruz
+                bar_data = my_port.copy()
+                st.bar_chart(bar_data.set_index('Kod')['Adet'])
+            
             with col2:
-                with col2:
                 st.write("### Tür Dağılımı")
-                # Veriyi açıkça DataFrame'e çeviriyoruz (Hata burada kopuyor)
+                # Hata veren kısmı burası düzeltiyor:
+                # 'Kat' sütunundaki değerleri say ve tabloya çevir
                 cat_dist = my_port['Kat'].value_counts().reset_index()
-                cat_dist.columns = ['Tür', 'Adet']
-                st.pie_chart(cat_dist, values='Adet', names='Tür')
+                # Sütun isimlerini netleştir
+                cat_dist.columns = ['Tür', 'Sayı']
+                # Grafiği çizdir
+                st.pie_chart(cat_dist, values='Sayı', names='Tür')
                 
-            st.markdown(f"""<div class="analysis-card"><h4>Stratejik Not</h4><p>Şu an portföyünde toplam <b>{len(my_port)}</b> farklı varlık bulunuyor. En yüksek ağırlık <b>{my_port.loc[my_port['Adet'].idxmax(), 'Kod']}</b> kodlu varlıkta.</p></div>""", unsafe_allow_html=True)
-        else: st.warning("Analiz için veri yok.")
-
+            st.markdown(f"""
+                <div class="analysis-card">
+                    <h4>Stratejik Not</h4>
+                    <p>Şu an portföyünde toplam <b>{len(my_port)}</b> farklı varlık bulunuyor. 
+                    En yüksek adetli pozisyonun: <b>{my_port.loc[my_port['Adet'].idxmax(), 'Kod']}</b></p>
+                </div>
+                """, unsafe_allow_html=True)
+        else: 
+            st.warning("Analiz edilecek veri bulunamadı. Lütfen portföyünüze varlık ekleyin.")
+            
     # --- 10. TAKVİM (GERÇEK VERİ SİMÜLASYONU) ---
     elif "TAKVİM" in menu:
         st.title("📅 Ekonomik Takvim")
