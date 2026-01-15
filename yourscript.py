@@ -141,7 +141,7 @@ else:
             c3.metric("Aktif Varlık", f"{len(proc_df)} Kalem")
             st.dataframe(proc_df[["Kod", "Adet", "Maliyet", "Güncel", "Kâr/Zarar"]], use_container_width=True, hide_index=True)
             st.plotly_chart(go.Figure(data=[go.Pie(labels=proc_df['Kod'], values=proc_df['Değer'], hole=.4)]))
-        else: st.info("Henüz varlık eklemediniz.")
+      
 
     # --- 7. AI OPTİMİZASYON & PDF RAPORU ---
     elif menu == "⚖️ OPTİMİZASYON":
