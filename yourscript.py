@@ -25,7 +25,7 @@ def init_db():
 init_db()
 
 # --- 2. MOBİL UYUMLU BEYAZ ARAYÜZ ---
-st.set_page_config(page_title="AKOSELL WMS", layout="centered", page_icon="🏛️") # Mobil için 'centered' daha iyidir
+st.set_page_config(page_title="AutoFlow", layout="centered", page_icon="") # Mobil için 'centered' daha iyidir
 
 st.markdown("""
     <style>
@@ -74,7 +74,7 @@ if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if not st.session_state.logged_in:
     _, center_col, _ = st.columns([1, 4, 1]) # Ekranın ortasında daha küçük toplu durur
     with center_col:
-        st.title("🏛️ AKOSELL WMS")
+        st.title("AutoFlow")
         tab1, tab2 = st.tabs(["Giriş Yap", "Kayıt Ol"])
         with tab1:
             u = st.text_input("Kullanıcı Adı", key="l_u")
