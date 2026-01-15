@@ -31,7 +31,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F8FAFC; }
     
-    /* Login Ekranını Küçültme ve Ortalama */
     .login-box {
         max-width: 420px;
         margin: auto;
@@ -45,14 +44,12 @@ st.markdown("""
     .stMetric { background: white !important; padding: 20px !important; border-radius: 12px !important; border: 1px solid #F1F5F9 !important; }
     [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E2E8F0; }
     
-    /* Mobil Buton Ayarı */
     div.stButton > button { width: 100% !important; border-radius: 10px; height: 45px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 3. YARDIMCI FONKSİYONLAR ---
 def tr_fix(text):
-    """PDF için Türkçe karakterleri temizler"""
     chars = {"İ": "I", "ı": "i", "Ş": "S", "ş": "s", "Ğ": "G", "ğ": "g", "Ü": "U", "ü": "u", "Ö": "O", "ö": "o", "Ç": "C", "ç": "c"}
     for tr, eng in chars.items():
         text = text.replace(tr, eng)
@@ -79,12 +76,10 @@ if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if not st.session_state.logged_in:
     st.write("##") 
     _, col_mid, _ = st.columns([1, 1.2, 1])
-    
     with col_mid:
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center;'>AutoFlow</h2>", unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["Giriş Yap", "Kayıt Ol"])
-        
         with tab1:
             u = st.text_input("Kullanıcı Adı", key="login_u")
             p = st.text_input("Şifre", type="password", key="login_p")
@@ -99,7 +94,6 @@ if not st.session_state.logged_in:
                         st.rerun()
                     else: st.warning("Hesabınız admin onayı bekliyor.")
                 else: st.error("Hatalı bilgiler.")
-        
         with tab2:
             new_u = st.text_input("Kullanıcı Adı Belirle", key="reg_u").lower()
             new_n = st.text_input("Ad Soyad", key="reg_n")
@@ -150,7 +144,6 @@ else:
             assets = my_port['Kod'].unique()
             data = pd.DataFrame()
             analysis_results = []
-
             with st.spinner("AI Hisse bazlı risk analizi yapıyor..."):
                 for a in assets:
                     tk = f"{a}.IS" if my_port[my_port['Kod']==a]['Kat'].values[0]=="Hisse" else f"{a}-USD"
@@ -167,7 +160,6 @@ else:
             st.subheader("📋 Hisse Bazlı AI Sinyalleri")
             st.table(res_df)
 
-            # PDF İndirme Butonu
             def export_pdf(df):
                 pdf = FPDF()
                 pdf.add_page()
@@ -220,22 +212,69 @@ else:
                     u_df.to_csv(USER_DB, index=False); st.rerun()
         else: st.info("Bekleyen onay yok.")
 
-    # --- 9. PORTFÖYÜM ---
+    # --- 9. PORTFÖYÜM (GÜNCELLENEN KISIM) ---
     elif menu == "💼 PORTFÖYÜM":
         st.title("💼 Varlık Yönetimi")
-        with st.form("add_asset"):
-            c1, c2, c3, c4 = st.columns(4)
-            k = c1.text_input("Sembol (Örn: THYAO)").upper()
-            a = c2.number_input("Adet", min_value=0.0)
-            m = c3.number_input("Maliyet", min_value=0.0)
-            cat = c4.selectbox("Tür", ["Hisse", "Kripto", "Altın"])
-            if st.form_submit_button("Sisteme Kaydet"):
-                new = pd.DataFrame([[st.session_state.u_data.get('Username'), k, m, a, cat]], columns=df_port.columns)
-                pd.concat([pd.read_csv(PORT_DB), new]).to_csv(PORT_DB, index=False)
-                st.rerun()
+        
+        # 1. Yeni Varlık Ekleme Formu
+        with st.expander("➕ Yeni Varlık Ekle", expanded=False):
+            with st.form("add_asset"):
+                c1, c2, c3, c4 = st.columns(4)
+                k = c1.text_input("Sembol (Örn: THYAO)").upper()
+                a = c2.number_input("Adet", min_value=0.0)
+                m = c3.number_input("Maliyet", min_value=0.0)
+                cat = c4.selectbox("Tür", ["Hisse", "Kripto", "Altın"])
+                if st.form_submit_button("Sisteme Kaydet"):
+                    new = pd.DataFrame([[st.session_state.u_data.get('Username'), k, m, a, cat]], columns=df_port.columns)
+                    pd.concat([pd.read_csv(PORT_DB), new]).to_csv(PORT_DB, index=False)
+                    st.success(f"{k} başarıyla eklendi.")
+                    st.rerun()
+
         st.divider()
-        st.subheader("Mevcut Varlıklar")
-        st.dataframe(my_port, use_container_width=True)
+        
+        # 2. Mevcut Varlıkları Düzenleme ve Silme
+        st.subheader("📝 Mevcut Varlıkları Düzenle")
+        if not my_port.empty:
+            # Düzenleme için bir form oluşturuyoruz
+            with st.form("edit_portfolio"):
+                updated_rows = []
+                for idx, row in my_port.iterrows():
+                    col_k, col_a, col_m, col_t, col_s = st.columns([1.5, 2, 2, 1.5, 1])
+                    
+                    # Sembol ve Tür (Sadece gösterim)
+                    col_k.markdown(f"**{row['Kod']}**")
+                    col_t.write(row['Kat'])
+                    
+                    # Düzenlenebilir Alanlar
+                    new_adet = col_a.number_input("Adet", value=float(row['Adet']), key=f"adet_{idx}", step=0.01)
+                    new_maliyet = col_m.number_input("Maliyet", value=float(row['Maliyet']), key=f"mal_{idx}", step=0.01)
+                    
+                    # Silme İşareti (Checkbox)
+                    to_delete = col_s.checkbox("Sil", key=f"del_{idx}")
+                    
+                    if not to_delete:
+                        updated_rows.append({
+                            "Owner": row['Owner'],
+                            "Kod": row['Kod'],
+                            "Maliyet": new_maliyet,
+                            "Adet": new_adet,
+                            "Kat": row['Kat']
+                        })
+
+                st.write("##")
+                if st.form_submit_button("💾 TÜM DEĞİŞİKLİKLERİ KAYDET", type="primary"):
+                    # Ana veritabanını oku
+                    full_df = pd.read_csv(PORT_DB)
+                    # Diğer kullanıcılara ait verileri koru
+                    others_df = full_df[full_df['Owner'] != st.session_state.u_data.get('Username')]
+                    # Güncel verileri yeni bir dataframe yap
+                    new_mine_df = pd.DataFrame(updated_rows)
+                    # Birleştir ve kaydet
+                    pd.concat([others_df, new_mine_df]).to_csv(PORT_DB, index=False)
+                    st.success("Portföyünüz başarıyla güncellendi!")
+                    st.rerun()
+        else:
+            st.info("Henüz bir varlığınız bulunmuyor.")
 
     # --- 10. AYARLAR ---
     elif menu == "⚙️ AYARLAR":
