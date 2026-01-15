@@ -141,7 +141,7 @@ else:
             data = pd.DataFrame()
             analysis_results = []
             with st.spinner("AI Analiz yapıyor..."):
-                for a in assets:
+                for idx, a in enumerate(assets, start=1):
                     tk = f"{a}.IS" if my_port[my_port['Kod']==a]['Kat'].values[0]=="Hisse" else f"{a}-USD"
                     hist = yf.Ticker(tk).history(period="1y")['Close']
                     data[a] = hist
@@ -150,11 +150,19 @@ else:
                     last = hist.iloc[-1]
                     risk_cat = "Dusuk" if vol < 25 else ("Orta" if vol < 45 else "Yuksek")
                     signal = "🟢 AL / TUT" if last > ma20 else "🔴 SAT / IZLE"
-                    analysis_results.append({"Varlık": a, "Risk (%)": f"{vol:.2f}", "Risk Seviyesi": risk_cat, "Sinyal": signal})
+                    
+                    analysis_results.append({
+                        "No": idx,
+                        "Varlık": a, 
+                        "Risk (%)": f"{vol:.2f}", 
+                        "Risk Seviyesi": risk_cat, 
+                        "Sinyal": signal
+                    })
 
             res_df = pd.DataFrame(analysis_results)
             st.subheader("📋 Hisse Bazlı AI Sinyalleri")
-            st.table(res_df)
+            # Index'i No kolonundan aldığımız için gizleyerek temiz görünüm sağlıyoruz
+            st.dataframe(res_df, use_container_width=True, hide_index=True)
 
             def export_pdf(df):
                 pdf = FPDF()
@@ -162,18 +170,19 @@ else:
                 pdf.set_font("Arial", 'B', 16)
                 pdf.cell(190, 10, tr_fix("AutoFlow AI Analiz Raporu"), ln=True, align='C')
                 pdf.ln(10)
-                pdf.set_font("Arial", 'B', 12)
-                headers = ["Varlik", "Risk %", "Risk Seviyesi", "Sinyal"]
-                for h in headers: pdf.cell(45, 10, tr_fix(h), 1)
+                pdf.set_font("Arial", 'B', 11)
+                headers = ["No", "Varlik", "Risk %", "Risk Seviyesi", "Sinyal"]
+                cols_width = [15, 40, 40, 45, 45]
+                for h, w in zip(headers, cols_width): pdf.cell(w, 10, tr_fix(h), 1)
                 pdf.ln()
-                pdf.set_font("Arial", '', 12)
+                pdf.set_font("Arial", '', 11)
                 for i, row in df.iterrows():
-                    # Emojileri PDF için temizle
                     clean_signal = str(row['Sinyal']).replace("🟢 ", "").replace("🔴 ", "")
-                    pdf.cell(45, 10, tr_fix(str(row['Varlık'])), 1)
-                    pdf.cell(45, 10, tr_fix(str(row['Risk (%)'])), 1)
-                    pdf.cell(45, 10, tr_fix(str(row['Risk Seviyesi'])), 1)
-                    pdf.cell(45, 10, tr_fix(clean_signal), 1)
+                    pdf.cell(cols_width[0], 10, str(row['No']), 1)
+                    pdf.cell(cols_width[1], 10, tr_fix(str(row['Varlık'])), 1)
+                    pdf.cell(cols_width[2], 10, tr_fix(str(row['Risk (%)'])), 1)
+                    pdf.cell(cols_width[3], 10, tr_fix(str(row['Risk Seviyesi'])), 1)
+                    pdf.cell(cols_width[4], 10, tr_fix(clean_signal), 1)
                     pdf.ln()
                 return pdf.output(dest='S').encode('latin-1', 'ignore')
 
@@ -181,7 +190,7 @@ else:
                 pdf_data = export_pdf(res_df)
                 st.download_button("📄 ANALİZ RAPORUNU PDF İNDİR", data=pdf_data, file_name="AI_Analiz.pdf", mime="application/pdf")
             except:
-                st.error("PDF oluşturulurken hata! Lütfen verileri kontrol edin.")
+                st.error("PDF oluşturulurken hata oluştu.")
 
             st.divider()
             st.subheader("🎯 İdeal Portföy Dağılımı")
