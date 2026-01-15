@@ -40,10 +40,8 @@ st.markdown("""
         box-shadow: 0 10px 25px rgba(0,0,0,0.05);
     }
     
-    .ai-card { background: white; padding: 25px; border-radius: 15px; border-left: 6px solid #4F46E5; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); margin-bottom: 20px; }
     .stMetric { background: white !important; padding: 20px !important; border-radius: 12px !important; border: 1px solid #F1F5F9 !important; }
     [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E2E8F0; }
-    
     div.stButton > button { width: 100% !important; border-radius: 10px; height: 45px; }
     </style>
     """, unsafe_allow_html=True)
@@ -67,7 +65,8 @@ def fetch_prices(df):
         except: prices.append(r['Maliyet'])
     df['Güncel'] = prices
     df['Değer'] = df['Güncel'] * df['Adet']
-    df['Kâr/Zarar'] = df['Değer'] - (df['Maliyet'] * df['Adet'])
+    df['Maliyet_Toplami'] = df['Maliyet'] * df['Adet'] # Dashboard için eklendi
+    df['Kâr/Zarar'] = df['Değer'] - df['Maliyet_Toplami']
     return df
 
 # --- 4. GİRİŞ VE KAYIT PANELİ ---
@@ -130,9 +129,11 @@ else:
         if not my_port.empty:
             proc_df = fetch_prices(my_port)
             c1, c2, c3 = st.columns(3)
-            c1.metric("Toplam Varlık", f"₺{proc_df['Değer'].sum():,.2f}")
+            # GÜNCELLEME: Maliyet Toplamı, Kar/Zarar ve Güncel Toplam Varlık
+            c1.metric("Maliyet Toplamı", f"₺{proc_df['Maliyet_Toplami'].sum():,.2f}")
             c2.metric("Toplam Kâr/Zarar", f"₺{proc_df['Kâr/Zarar'].sum():,.2f}")
-            c3.metric("Aktif Varlık", f"{len(proc_df)} Kalem")
+            c3.metric("Toplam Varlık (Güncel)", f"₺{proc_df['Değer'].sum():,.2f}")
+            
             st.dataframe(proc_df[["Kod", "Adet", "Maliyet", "Güncel", "Kâr/Zarar"]], use_container_width=True, hide_index=True)
             st.plotly_chart(go.Figure(data=[go.Pie(labels=proc_df['Kod'], values=proc_df['Değer'], hole=.4)]))
         else: st.info("Henüz varlık eklemediniz.")
@@ -144,7 +145,7 @@ else:
             assets = my_port['Kod'].unique()
             data = pd.DataFrame()
             analysis_results = []
-            with st.spinner("AI Hisse bazlı risk analizi yapıyor..."):
+            with st.spinner("AI Analiz yapıyor..."):
                 for a in assets:
                     tk = f"{a}.IS" if my_port[my_port['Kod']==a]['Kat'].values[0]=="Hisse" else f"{a}-USD"
                     hist = yf.Ticker(tk).history(period="1y")['Close']
@@ -152,25 +153,31 @@ else:
                     vol = hist.pct_change().std() * np.sqrt(252) * 100
                     ma20 = hist.rolling(20).mean().iloc[-1]
                     last = hist.iloc[-1]
-                    risk_cat = "Dusuk" if vol < 25 else ("Orta" if vol < 45 else "Yuksek")
-                    signal = "AL / TUT" if last > ma20 else "SAT / IZLE"
+                    risk_cat = "Düşük" if vol < 25 else ("Orta" if vol < 45 else "Yüksek")
+                    
+                    # GÜNCELLEME: Renkli Sinyaller
+                    if last > ma20:
+                        signal = "🟢 AL / TUT"
+                    else:
+                        signal = "🔴 SAT / İZLE"
+                        
                     analysis_results.append({"Varlık": a, "Risk (%)": f"{vol:.2f}", "Risk Seviyesi": risk_cat, "Sinyal": signal})
 
             res_df = pd.DataFrame(analysis_results)
             st.subheader("📋 Hisse Bazlı AI Sinyalleri")
-            st.table(res_df)
+            st.table(res_df) # Renkleri doğrudan tablo içinde gösterir
 
             def export_pdf(df):
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font("Arial", 'B', 16)
-                pdf.cell(190, 10, tr_fix("AutoFlow AI Portfoy Analiz Raporu"), ln=True, align='C')
+                pdf.cell(190, 10, tr_fix("AutoFlow AI Analiz Raporu"), ln=True, align='C')
                 pdf.ln(10)
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(40, 10, tr_fix("Varlik"), 1)
                 pdf.cell(40, 10, tr_fix("Risk %"), 1)
                 pdf.cell(50, 10, tr_fix("Risk Seviyesi"), 1)
-                pdf.cell(60, 10, tr_fix("AI Sinyali"), 1)
+                pdf.cell(60, 10, tr_fix("Sinyal"), 1)
                 pdf.ln()
                 pdf.set_font("Arial", '', 12)
                 for i, row in df.iterrows():
@@ -183,9 +190,9 @@ else:
 
             try:
                 pdf_bytes = export_pdf(res_df)
-                st.download_button("📄 ANALİZ RAPORUNU PDF İNDİR", data=pdf_bytes, file_name="AI_Analiz_Raporu.pdf", mime="application/pdf")
+                st.download_button("📄 ANALİZ RAPORUNU PDF İNDİR", data=pdf_bytes, file_name="AI_Analiz.pdf", mime="application/pdf")
             except:
-                st.error("PDF oluşturulurken karakter hatası oluştu.")
+                st.error("PDF oluşturulurken bir hata oluştu.")
 
             st.divider()
             st.subheader("🎯 İdeal Portföy Dağılımı")
@@ -193,7 +200,7 @@ else:
             def get_vol(w): return np.sqrt(np.dot(w.T, np.dot(returns.cov() * 252, w)))
             res = minimize(get_vol, [1./len(assets)]*len(assets), bounds=[(0,1)]*len(assets), constraints={'type':'eq','fun': lambda x: np.sum(x)-1})
             st.plotly_chart(go.Figure(data=[go.Pie(labels=assets, values=res.x, hole=.3)]))
-        else: st.warning("Analiz için en az 2 farklı varlık ekleyin.")
+        else: st.warning("En az 2 farklı varlık ekleyin.")
 
     # --- 8. ADMIN PANELİ ---
     elif menu == "🔑 ADMIN PANELİ":
@@ -212,11 +219,9 @@ else:
                     u_df.to_csv(USER_DB, index=False); st.rerun()
         else: st.info("Bekleyen onay yok.")
 
-    # --- 9. PORTFÖYÜM (GÜNCELLENEN KISIM) ---
+    # --- 9. PORTFÖYÜM ---
     elif menu == "💼 PORTFÖYÜM":
         st.title("💼 Varlık Yönetimi")
-        
-        # 1. Yeni Varlık Ekleme Formu
         with st.expander("➕ Yeni Varlık Ekle", expanded=False):
             with st.form("add_asset"):
                 c1, c2, c3, c4 = st.columns(4)
@@ -227,54 +232,31 @@ else:
                 if st.form_submit_button("Sisteme Kaydet"):
                     new = pd.DataFrame([[st.session_state.u_data.get('Username'), k, m, a, cat]], columns=df_port.columns)
                     pd.concat([pd.read_csv(PORT_DB), new]).to_csv(PORT_DB, index=False)
-                    st.success(f"{k} başarıyla eklendi.")
                     st.rerun()
 
         st.divider()
-        
-        # 2. Mevcut Varlıkları Düzenleme ve Silme
         st.subheader("📝 Mevcut Varlıkları Düzenle")
         if not my_port.empty:
-            # Düzenleme için bir form oluşturuyoruz
             with st.form("edit_portfolio"):
                 updated_rows = []
                 for idx, row in my_port.iterrows():
                     col_k, col_a, col_m, col_t, col_s = st.columns([1.5, 2, 2, 1.5, 1])
-                    
-                    # Sembol ve Tür (Sadece gösterim)
                     col_k.markdown(f"**{row['Kod']}**")
                     col_t.write(row['Kat'])
-                    
-                    # Düzenlenebilir Alanlar
-                    new_adet = col_a.number_input("Adet", value=float(row['Adet']), key=f"adet_{idx}", step=0.01)
-                    new_maliyet = col_m.number_input("Maliyet", value=float(row['Maliyet']), key=f"mal_{idx}", step=0.01)
-                    
-                    # Silme İşareti (Checkbox)
+                    new_adet = col_a.number_input("Adet", value=float(row['Adet']), key=f"adet_{idx}")
+                    new_maliyet = col_m.number_input("Maliyet", value=float(row['Maliyet']), key=f"mal_{idx}")
                     to_delete = col_s.checkbox("Sil", key=f"del_{idx}")
-                    
                     if not to_delete:
-                        updated_rows.append({
-                            "Owner": row['Owner'],
-                            "Kod": row['Kod'],
-                            "Maliyet": new_maliyet,
-                            "Adet": new_adet,
-                            "Kat": row['Kat']
-                        })
+                        updated_rows.append({"Owner": row['Owner'], "Kod": row['Kod'], "Maliyet": new_maliyet, "Adet": new_adet, "Kat": row['Kat']})
 
-                st.write("##")
                 if st.form_submit_button("💾 TÜM DEĞİŞİKLİKLERİ KAYDET", type="primary"):
-                    # Ana veritabanını oku
                     full_df = pd.read_csv(PORT_DB)
-                    # Diğer kullanıcılara ait verileri koru
                     others_df = full_df[full_df['Owner'] != st.session_state.u_data.get('Username')]
-                    # Güncel verileri yeni bir dataframe yap
                     new_mine_df = pd.DataFrame(updated_rows)
-                    # Birleştir ve kaydet
                     pd.concat([others_df, new_mine_df]).to_csv(PORT_DB, index=False)
-                    st.success("Portföyünüz başarıyla güncellendi!")
+                    st.success("Güncellendi!")
                     st.rerun()
-        else:
-            st.info("Henüz bir varlığınız bulunmuyor.")
+        else: st.info("Portföy boş.")
 
     # --- 10. AYARLAR ---
     elif menu == "⚙️ AYARLAR":
