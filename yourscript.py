@@ -123,20 +123,30 @@ else:
     df_port = pd.read_csv(PORT_DB)
     my_port = df_port[df_port['Owner'] == st.session_state.u_data.get('Username')]
 
-    # --- 6. DASHBOARD ---
-    if menu == "📊 DASHBOARD":
-        st.title("📊 Portföy Detaylı Raporu")
+     # --- 7. DASHBOARD ---
+    if "DASHBOARD" in menu:
+        st.title("📊 DASHBOARD")
         if not my_port.empty:
-            proc_df = fetch_prices(my_port)
+            with st.spinner('Piyasa verileri çekiliyor...'):
+                display_df = my_port.copy()
+                prices = [get_single_price(r['Kod'], r['Kat']) for i, r in display_df.iterrows()]
+                display_df['Güncel Fiyat'] = [p if p > 0 else r['Maliyet'] for p, (i, r) in zip(prices, display_df.iterrows())]
+                display_df['Toplam Maliyet'] = display_df['Maliyet'] * display_df['Adet']
+                display_df['Toplam Değer'] = display_df['Güncel Fiyat'] * display_df['Adet']
+                display_df['Kâr/Zarar'] = display_df['Toplam Değer'] - display_df['Toplam Maliyet']
+                
+                t_cost = display_df['Toplam Maliyet'].sum()
+                t_value = display_df['Toplam Değer'].sum()
+                t_profit = t_value - t_cost
+                p_ratio = (t_profit / t_cost * 100) if t_cost > 0 else 0
+
             c1, c2, c3 = st.columns(3)
-            # GÜNCELLEME: Maliyet Toplamı, Kar/Zarar ve Güncel Toplam Varlık
-            c1.metric("Maliyet Toplamı", f"₺{proc_df['Maliyet_Toplami'].sum():,.2f}")
-            c2.metric("Toplam Kâr/Zarar", f"₺{proc_df['Kâr/Zarar'].sum():,.2f}")
-            c3.metric("Toplam Varlık (Güncel)", f"₺{proc_df['Değer'].sum():,.2f}")
-            
-            st.dataframe(proc_df[["Kod", "Adet", "Maliyet", "Güncel", "Kâr/Zarar"]], use_container_width=True, hide_index=True)
-            st.plotly_chart(go.Figure(data=[go.Pie(labels=proc_df['Kod'], values=proc_df['Değer'], hole=.4)]))
-        else: st.info("Henüz varlık eklemediniz.")
+            c1.metric("TOPLAM YATIRIM", f"₺{t_cost:,.2f}")
+            c2.metric("NET KÂR / ZARAR", f"₺{t_profit:,.2f}", delta=f"{p_ratio:.2f}%")
+            c3.metric("PORTFÖY DEĞERİ", f"₺{t_value:,.2f}")
+            st.divider()
+            st.dataframe(display_df[["Kod", "Kat", "Adet", "Maliyet", "Güncel Fiyat", "Kâr/Zarar"]], use_container_width=True, hide_index=True)
+        else: st.info("Portföy boş.")
 
     # --- 7. AI OPTİMİZASYON & PDF RAPORU ---
     elif menu == "⚖️ OPTİMİZASYON":
