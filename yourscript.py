@@ -24,7 +24,7 @@ def init_db():
 
 init_db()
 
-# --- 2. MODER VE MOBİL UYUMLU ARAYÜZ ---
+# --- 2. MODERN ARAYÜZ AYARLARI ---
 st.set_page_config(page_title="AutoFlow Terminal", layout="wide", page_icon="🏛️")
 st.markdown("""
     <style>
@@ -106,7 +106,7 @@ else:
     df_port = pd.read_csv(PORT_DB)
     my_port = df_port[df_port['Owner'] == st.session_state.u_data.get('Username')]
 
-    # --- 6. DASHBOARD (YENİLENEN KISIM) ---
+    # --- 6. DASHBOARD ---
     if "DASHBOARD" in menu:
         st.title("📊 DASHBOARD")
         if not my_port.empty:
@@ -130,8 +130,6 @@ else:
             
             st.divider()
             st.dataframe(display_df[["Kod", "Kat", "Adet", "Maliyet", "Güncel Fiyat", "Kâr/Zarar"]], use_container_width=True, hide_index=True)
-            
-            # Pasta Grafiği (Dashboard'da görsel bütünlük için korundu)
             st.plotly_chart(go.Figure(data=[go.Pie(labels=display_df['Kod'], values=display_df['Toplam Değer'], hole=.4)]))
         else: st.info("Portföy boş.")
 
@@ -150,8 +148,8 @@ else:
                     vol = hist.pct_change().std() * np.sqrt(252) * 100
                     ma20 = hist.rolling(20).mean().iloc[-1]
                     last = hist.iloc[-1]
-                    risk_cat = "Düşük" if vol < 25 else ("Orta" if vol < 45 else "Yüksek")
-                    signal = "🟢 AL / TUT" if last > ma20 else "🔴 SAT / İZLE"
+                    risk_cat = "Dusuk" if vol < 25 else ("Orta" if vol < 45 else "Yuksek")
+                    signal = "🟢 AL / TUT" if last > ma20 else "🔴 SAT / IZLE"
                     analysis_results.append({"Varlık": a, "Risk (%)": f"{vol:.2f}", "Risk Seviyesi": risk_cat, "Sinyal": signal})
 
             res_df = pd.DataFrame(analysis_results)
@@ -160,17 +158,37 @@ else:
 
             def export_pdf(df):
                 pdf = FPDF()
-                pdf.add_page(); pdf.set_font("Arial", 'B', 16)
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 16)
                 pdf.cell(190, 10, tr_fix("AutoFlow AI Analiz Raporu"), ln=True, align='C')
-                pdf.ln(10); pdf.set_font("Arial", 'B', 12)
-                for col in ["Varlik", "Risk %", "Risk Seviyesi", "Sinyal"]: pdf.cell(45, 10, tr_fix(col), 1)
-                pdf.ln(); pdf.set_font("Arial", '', 12)
+                pdf.ln(10)
+                pdf.set_font("Arial", 'B', 12)
+                headers = ["Varlik", "Risk %", "Risk Seviyesi", "Sinyal"]
+                for h in headers: pdf.cell(45, 10, tr_fix(h), 1)
+                pdf.ln()
+                pdf.set_font("Arial", '', 12)
                 for i, row in df.iterrows():
-                    for val in row: pdf.cell(45, 10, tr_fix(str(val)), 1)
+                    # Emojileri PDF için temizle
+                    clean_signal = str(row['Sinyal']).replace("🟢 ", "").replace("🔴 ", "")
+                    pdf.cell(45, 10, tr_fix(str(row['Varlık'])), 1)
+                    pdf.cell(45, 10, tr_fix(str(row['Risk (%)'])), 1)
+                    pdf.cell(45, 10, tr_fix(str(row['Risk Seviyesi'])), 1)
+                    pdf.cell(45, 10, tr_fix(clean_signal), 1)
                     pdf.ln()
                 return pdf.output(dest='S').encode('latin-1', 'ignore')
 
-            st.download_button("📄 ANALİZ RAPORUNU PDF İNDİR", data=export_pdf(res_df), file_name="AI_Analiz.pdf", mime="application/pdf")
+            try:
+                pdf_data = export_pdf(res_df)
+                st.download_button("📄 ANALİZ RAPORUNU PDF İNDİR", data=pdf_data, file_name="AI_Analiz.pdf", mime="application/pdf")
+            except:
+                st.error("PDF oluşturulurken hata! Lütfen verileri kontrol edin.")
+
+            st.divider()
+            st.subheader("🎯 İdeal Portföy Dağılımı")
+            returns = data.pct_change().dropna()
+            def get_vol(w): return np.sqrt(np.dot(w.T, np.dot(returns.cov() * 252, w)))
+            res = minimize(get_vol, [1./len(assets)]*len(assets), bounds=[(0,1)]*len(assets), constraints={'type':'eq','fun': lambda x: np.sum(x)-1})
+            st.plotly_chart(go.Figure(data=[go.Pie(labels=assets, values=res.x, hole=.3)]))
         else: st.warning("En az 2 farklı varlık ekleyin.")
 
     # --- 8. ADMIN PANELİ ---
@@ -219,8 +237,9 @@ else:
     # --- 10. AYARLAR ---
     elif menu == "⚙️ AYARLAR":
         st.title("⚙️ Hesap Ayarları")
-        new_p = st.text_input("Yeni Şifre", type="password")
-        if st.button("Güncelle"):
-            u_df = pd.read_csv(USER_DB)
-            u_df.loc[u_df['Username'] == st.session_state.u_data.get('Username'), 'Password'] = hashlib.sha256(str.encode(new_p)).hexdigest()
-            u_df.to_csv(USER_DB, index=False); st.success("Şifre güncellendi.")
+        with st.expander("Şifre Değiştir"):
+            new_pass = st.text_input("Yeni Şifre", type="password")
+            if st.button("Güncelle"):
+                u_df = pd.read_csv(USER_DB)
+                u_df.loc[u_df['Username'] == st.session_state.u_data.get('Username'), 'Password'] = hashlib.sha256(str.encode(new_pass)).hexdigest()
+                u_df.to_csv(USER_DB, index=False); st.success("Şifre güncellendi.")
