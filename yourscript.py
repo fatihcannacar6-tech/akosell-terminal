@@ -1,78 +1,74 @@
 import streamlit as st
 import pandas as pd
-import os
-import hashlib
-import yfinance as yf
-from datetime import datetime, timedelta
 import numpy as np
+import yfinance as yf
+import hashlib
+import os
+import base64
+from datetime import datetime, timedelta
+from scipy.optimize import minimize
 import plotly.graph_objects as go
+from fpdf import FPDF
 
-# --- 1. SAYFA AYARLARI ---
-st.set_page_config(page_title="AutoFlow AI", layout="wide", page_icon="🤖")
-
-# --- 2. GELİŞMİŞ CSS (WHITE INTERFACE & MODERN UI) ---
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-    
-    html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #FBFBFE; }
-    
-    /* Sidebar Tasarımı */
-    [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #F0F2F6; }
-    .user-profile { padding: 20px; background: #FFFFFF; border-radius: 16px; margin: 10px 15px; border: 1px solid #F0F2F6; box-shadow: 0 4px 12px rgba(0,0,0,0.03); text-align: center; }
-    
-    /* Kartlar ve AI Bölümü */
-    .ai-card { background: linear-gradient(135deg, #F8FAFF 0%, #FFFFFF 100%); border: 1px solid #E0E7FF; border-radius: 15px; padding: 20px; margin-bottom: 20px; border-left: 5px solid #4F46E5; }
-    .market-ticker { background: #FFFFFF; padding: 10px; border-bottom: 1px solid #F0F2F6; display: flex; justify-content: space-around; font-weight: 600; font-size: 13px; }
-    
-    /* Form ve Button */
-    .stButton>button { border-radius: 10px; font-weight: 600; transition: all 0.3s; }
-    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2); }
-    
-    /* Radio Button Fix */
-    .stRadio div[role="radiogroup"] label { background-color: #FFFFFF !important; border: 1px solid #F0F2F6 !important; border-radius: 12px !important; padding: 10px 15px !important; margin-bottom: 5px !important; font-weight: 600 !important; }
-    .stRadio div[role="radiogroup"] label[data-checked="true"] { background-color: #4F46E5 !important; color: white !important; border: none !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 3. VERİ SİSTEMİ ---
+# --- 1. SİSTEM AYARLARI & DATABASE ---
 USER_DB, PORT_DB = "users_v12.csv", "portfolio_v12.csv"
 
 def init_db():
-    if not os.path.exists(USER_DB): pd.DataFrame(columns=["Username", "Password", "Name", "Email"]).to_csv(USER_DB, index=False)
-    if not os.path.exists(PORT_DB): pd.DataFrame(columns=["Owner", "Kod", "YF_Kod", "Maliyet", "Adet", "Kat"]).to_csv(PORT_DB, index=False)
+    if not os.path.exists(USER_DB):
+        pd.DataFrame(columns=["Username", "Password", "Name", "Email"]).to_csv(USER_DB, index=False)
+        # Varsayılan admin hesabı oluştur (Şifre: admin123)
+        hp = hashlib.sha256(str.encode("admin123")).hexdigest()
+        admin = pd.DataFrame([["admin", hp, "Sistem Yoneticisi", "admin@autoflow.com"]], columns=["Username", "Password", "Name", "Email"])
+        admin.to_csv(USER_DB, index=False)
+    if not os.path.exists(PORT_DB):
+        pd.DataFrame(columns=["Owner", "Kod", "Maliyet", "Adet", "Kat"]).to_csv(PORT_DB, index=False)
 
 init_db()
 
-# --- 4. AI & MARKET MOTORU ---
-class AutoFlowAI:
-    @staticmethod
-    def get_market_snapshot():
-        symbols = {"BIST 100": "XU100.IS", "Bitcoin": "BTC-USD", "Gram Altın": "GC=F", "USD/TRY": "USDTRY=X"}
-        data = {}
-        for name, sym in symbols.items():
-            try:
-                val = yf.Ticker(sym).history(period="1d")['Close'].iloc[-1]
-                data[name] = val
-            except: data[name] = 0
-        return data
+# --- 2. MODERN UI (WHITE INTERFACE) ---
+st.set_page_config(page_title="AutoFlow AI Terminal", layout="wide", page_icon="🏛️")
 
-    @staticmethod
-    def analyze_portfolio(df):
-        if df.empty: return "Henüz analiz edilecek veri yok. Lütfen varlık ekleyin."
-        total_val = df['Toplam Değer'].sum()
-        top_asset = df.loc[df['Kâr/Zarar'].idxmax(), 'Kod']
-        
-        analysis = f"""
-        🤖 **AI Analiz Özeti:**
-        * Portföyünüzün ana lokomotifi **{top_asset}**. 
-        * Toplam değeriniz **₺{total_val:,.2f}**. 
-        * {'⚠️ Çeşitlendirme Eksik: Portföyün %50\'den fazlası tek varlıkta.' if (df['Toplam Değer'].max()/total_val) > 0.5 else '✅ Portföy dağılımınız dengeli görünüyor.'}
-        * Öneri: Mevcut volatilitede nakit oranınızı %15 seviyesinde tutmak risk yönetimi açısından faydalı olabilir.
-        """
-        return analysis
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #F8FAFC; }
+    [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E2E8F0; }
+    .ai-card { background: white; padding: 20px; border-radius: 12px; border-left: 5px solid #4F46E5; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .stMetric { background: white; padding: 15px; border-radius: 10px; border: 1px solid #E2E8F0; }
+    .user-profile { padding: 15px; background: #F1F5F9; border-radius: 10px; text-align: center; margin-bottom: 20px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- 5. GİRİŞ EKRANI ---
+# --- 3. YARDIMCI FONKSİYONLAR (PDF, ANALİZ, OPTİMİZASYON) ---
+
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'AutoFlow AI - Yatirimci Raporu', 0, 1, 'C')
+
+def get_pdf_download_link(df):
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=10)
+    pdf.cell(0, 10, f"Rapor Tarihi: {datetime.now().strftime('%d/%m/%Y')}", 0, 1)
+    for i, row in df.iterrows():
+        pdf.cell(0, 10, f"{row['Kod']} - Adet: {row['Adet']} - Maliyet: {row['Maliyet']} - Kar/Zarar: {row['Kâr/Zarar']:.2f}", 0, 1)
+    return pdf.output(dest='S').encode('latin-1')
+
+def fetch_prices(df):
+    if df.empty: return df
+    df = df.copy()
+    prices = []
+    for _, r in df.iterrows():
+        sym = f"{r['Kod']}.IS" if r['Kat'] == "Hisse" else (f"{r['Kod']}-USD" if r['Kat'] == "Kripto" else r['Kod'])
+        try: prices.append(yf.Ticker(sym).history(period="1d")['Close'].iloc[-1])
+        except: prices.append(r['Maliyet'])
+    df['Güncel Fiyat'] = prices
+    df['Toplam Değer'] = df['Güncel Fiyat'] * df['Adet']
+    df['Kâr/Zarar'] = df['Toplam Değer'] - (df['Maliyet'] * df['Adet'])
+    return df
+
+# --- 4. GİRİŞ KONTROLÜ ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
@@ -80,113 +76,128 @@ if not st.session_state.logged_in:
     with col:
         st.markdown("<h1 style='text-align:center;'>AKOSELL WMS</h1>", unsafe_allow_html=True)
         with st.container(border=True):
-            u = st.text_input("Kullanıcı Adı")
+            u = st.text_input("Kullanıcı")
             p = st.text_input("Şifre", type="password")
-            if st.button("SİSTEME GİRİŞ YAP", use_container_width=True, type="primary"):
+            if st.button("SİSTEME GİRİŞ", use_container_width=True):
                 users = pd.read_csv(USER_DB)
                 hp = hashlib.sha256(str.encode(p)).hexdigest()
                 if not users[(users['Username']==u) & (users['Password']==hp)].empty:
                     st.session_state.logged_in = True
                     st.session_state.u_data = users[users['Username']==u].iloc[0].to_dict()
                     st.rerun()
-                else: st.error("Hatalı kimlik bilgileri.")
-
+                else: st.error("Hatalı Giriş!")
 else:
-    # --- MARKET TICKER (ÜST BAR) ---
-    snapshot = AutoFlowAI.get_market_snapshot()
-    cols = st.columns(len(snapshot))
-    for i, (name, val) in enumerate(snapshot.items()):
-        cols[i].metric(name, f"{val:,.2f}")
-
-    # --- SIDEBAR ---
+    # --- 5. SIDEBAR ---
     with st.sidebar:
-        st.markdown(f"""<div class="user-profile"><small>AKOSELL WMS ADM</small><br><b>{st.session_state.u_data['Name'].upper()}</b><br><span style="color:#4F46E5; font-size:12px;">AI-POWERED PRO</span></div>""", unsafe_allow_html=True)
-        menu = st.radio("MENÜ", ["📊 DASHBOARD", "🤖 AI STRATEJİST", "💼 PORTFÖY", "📈 ANALİZ", "⚙️ AYARLAR"])
-        
-        if st.button("ÇIKIŞ YAP", use_container_width=True):
+        st.markdown(f'<div class="user-profile"><b>{st.session_state.u_data["Name"]}</b><br><small>Premium Member</small></div>', unsafe_allow_html=True)
+        menu = st.radio("NAVIGASYON", ["📊 DASHBOARD", "🤖 AI STRATEJİST", "⚖️ OPTİMİZASYON", "⏪ BACKTEST", "💼 PORTFÖY", "⚙️ AYARLAR"])
+        if st.button("GÜVENLİ ÇIKIŞ"):
             st.session_state.logged_in = False
             st.rerun()
 
-    # --- VERİ HAZIRLAMA ---
+    # Veri Yükleme
     df_port = pd.read_csv(PORT_DB)
-    my_port = df_port[df_port['Owner'] == st.session_state.u_data['Username']]
-    
-    def fetch_prices(df):
-        if df.empty: return df
-        df = df.copy()
-        prices = []
-        for _, r in df.iterrows():
-            sym = f"{r['Kod']}.IS" if r['Kat'] == "Hisse" else (f"{r['Kod']}-USD" if r['Kat'] == "Kripto" else r['Kod'])
-            try: prices.append(yf.Ticker(sym).history(period="1d")['Close'].iloc[-1])
-            except: prices.append(r['Maliyet'])
-        df['Güncel Fiyat'] = prices
-        df['Toplam Maliyet'] = df['Maliyet'] * df['Adet']
-        df['Toplam Değer'] = df['Güncel Fiyat'] * df['Adet']
-        df['Kâr/Zarar'] = df['Toplam Değer'] - df['Toplam Maliyet']
-        return df
+    my_port = df_port[df_port['Owner'] == st.session_state.u_data['Username']] if not df_port.empty else pd.DataFrame()
 
-    # --- DASHBOARD ---
+    # --- 6. DASHBOARD ---
     if menu == "📊 DASHBOARD":
-        st.title("Finansal Durum Paneli")
+        st.title("Finansal Dashboard")
         if not my_port.empty:
             processed_df = fetch_prices(my_port)
             c1, c2, c3 = st.columns(3)
-            total_cost = processed_df['Toplam Maliyet'].sum()
-            total_val = processed_df['Toplam Değer'].sum()
-            profit = total_val - total_cost
+            c1.metric("Toplam Portföy", f"₺{processed_df['Toplam Değer'].sum():,.2f}")
+            c2.metric("Günlük Kar/Zarar", f"₺{processed_df['Kâr/Zarar'].sum():,.2f}")
+            c3.metric("Aktif Varlık", len(processed_df))
             
-            c1.metric("Yatırılan Sermaye", f"₺{total_cost:,.2f}")
-            c2.metric("Güncel Portföy", f"₺{total_val:,.2f}", delta=f"{((total_val/total_cost)-1)*100:.2f}%" if total_cost>0 else 0)
-            c3.metric("Net Kar/Zarar", f"₺{profit:,.2f}")
+            st.dataframe(processed_df, use_container_width=True)
             
-            st.dataframe(processed_df[["Kod", "Kat", "Adet", "Maliyet", "Güncel Fiyat", "Kâr/Zarar"]], use_container_width=True)
+            if st.button("📄 PDF RAPORU İNDİR"):
+                pdf_bytes = get_pdf_download_link(processed_df)
+                st.download_button("Dosyayı Kaydet", pdf_bytes, file_name="AutoFlow_Rapor.pdf")
         else:
-            st.info("Portföyünüz henüz boş. '💼 PORTFÖY' sekmesinden varlık ekleyin.")
+            st.info("Portföyünüz boş.")
 
-    # --- AI STRATEJİST (YENİ BÖLÜM) ---
+    # --- 7. AI STRATEJİST & SİNYALLER ---
     elif menu == "🤖 AI STRATEJİST":
-        st.title("AutoFlow AI Stratejisti")
+        st.title("AI Teknik Analiz Motoru")
         if not my_port.empty:
-            processed_df = fetch_prices(my_port)
-            st.markdown(f'<div class="ai-card">{AutoFlowAI.analyze_portfolio(processed_df)}</div>', unsafe_allow_html=True)
+            target = st.selectbox("Analiz Edilecek Varlık", my_port['Kod'].unique())
+            hist = yf.Ticker(f"{target}.IS").history(period="1mo")
             
-            st.subheader("Teknik Sinyal Üretici")
-            target_asset = st.selectbox("Analiz Edilecek Varlık", processed_df['Kod'].unique())
-            if st.button("AI Teknik Analiz Başlat"):
-                with st.spinner("Veriler işleniyor..."):
-                    # Basit bir RSI/MA analizi simülasyonu
-                    hist = yf.Ticker(f"{target_asset}.IS").history(period="1mo")
-                    if not hist.empty:
-                        st.line_chart(hist['Close'])
-                        st.success(f"AI Yorumu: {target_asset} için 20 günlük hareketli ortalama üzerinde kalıcılık pozitif. Destek: {hist['Close'].min():,.2f}")
+            st.line_chart(hist['Close'])
+            
+            # Basit Sinyal Mantığı
+            last_price = hist['Close'].iloc[-1]
+            ma20 = hist['Close'].rolling(20).mean().iloc[-1]
+            
+            st.markdown(f"""
+            <div class="ai-card">
+                <h3>AI Teknik Görünüm: {target}</h3>
+                <p>Fiyat: <b>{last_price:.2f}</b> | 20 Günlük Ort: <b>{ma20:.2f}</b></p>
+                <p>Durum: {"🟢 TREND YUKARI - ALIM GÜÇLÜ" if last_price > ma20 else "🔴 TREND AŞAĞI - BEKLE"} </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    # --- 8. OPTİMİZASYON (MARKOWITZ) ---
+    elif menu == "⚖️ OPTİMİZASYON":
+        st.title("Portföy Optimizasyonu")
+        if len(my_port) >= 3:
+            assets = my_port['Kod'].unique()
+            data = pd.DataFrame()
+            for a in assets:
+                data[a] = yf.Ticker(f"{a}.IS").history(period="1y")['Close']
+            
+            returns = data.pct_change().dropna()
+            def get_vol(w): return np.sqrt(np.dot(w.T, np.dot(returns.cov() * 252, w)))
+            
+            res = minimize(get_vol, [1./len(assets)]*len(assets), bounds=[(0,1)]*len(assets), constraints={'type':'eq','fun': lambda x: np.sum(x)-1})
+            
+            st.write("AI Önerilen Ağırlık Dağılımı:")
+            for i, a in enumerate(assets):
+                st.write(f"**{a}:** %{res.x[i]*100:.1f}")
+            
+            st.plotly_chart(go.Figure(data=[go.Pie(labels=assets, values=res.x)]))
         else:
-            st.warning("AI analizi için veri gerekli.")
+            st.warning("En az 3 varlık gerekli.")
 
-    # --- AYARLAR (ŞİFRE VE PROFİL) ---
+    # --- 9. BACKTEST ---
+    elif menu == "⏪ BACKTEST":
+        st.title("Geçmiş Performans Analizi")
+        if not my_port.empty:
+            bist = yf.Ticker("XU100.IS").history(period="1y")['Close']
+            bist_norm = (bist / bist.iloc[0]) * 100
+            st.line_chart(bist_norm)
+            st.info("Portföyünüzün son 1 yıllık endeks kıyaslaması yukarıdadır.")
+
+    # --- 10. PORTFÖY YÖNETİMİ ---
+    elif menu == "💼 PORTFÖY":
+        st.title("Varlık Yönetimi")
+        with st.form("add_asset"):
+            c1, c2, c3, c4 = st.columns(4)
+            k = c1.text_input("Kod (Örn: THYAO)")
+            a = c2.number_input("Adet", min_value=0.0)
+            m = c3.number_input("Maliyet", min_value=0.0)
+            t = c4.selectbox("Tür", ["Hisse", "Kripto", "Döviz"])
+            if st.form_submit_button("Ekle"):
+                new_data = pd.DataFrame([[st.session_state.u_data['Username'], k.upper(), m, a, t]], columns=["Owner", "Kod", "Maliyet", "Adet", "Kat"])
+                pd.concat([pd.read_csv(PORT_DB), new_data]).to_csv(PORT_DB, index=False)
+                st.rerun()
+        
+        st.subheader("Mevcut Varlıklar")
+        edited_df = st.data_editor(my_port, num_rows="dynamic")
+        if st.button("Değişiklikleri Kaydet"):
+            other_users = df_port[df_port['Owner'] != st.session_state.u_data['Username']]
+            pd.concat([other_users, edited_df]).to_csv(PORT_DB, index=False)
+            st.success("Güncellendi!")
+
+    # --- 11. AYARLAR ---
     elif menu == "⚙️ AYARLAR":
-        st.title("Sistem Ayarları")
-        t1, t2 = st.tabs(["Kullanıcı Bilgileri", "Şifre Değiştir"])
-        
-        with t1:
-            new_name = st.text_input("Görünen Ad", st.session_state.u_data['Name'])
-            new_email = st.text_input("E-posta", st.session_state.u_data['Email'])
-            if st.button("Profil Güncelle"):
-                db = pd.read_csv(USER_DB)
-                db.loc[db['Username'] == st.session_state.u_data['Username'], ['Name', 'Email']] = [new_name, new_email]
-                db.to_csv(USER_DB, index=False)
-                st.success("Bilgiler kaydedildi!")
-        
-        with t2:
-            old_p = st.text_input("Mevcut Şifre", type="password")
+        st.title("Profil ve Şifre")
+        with st.expander("Şifre Değiştir"):
             new_p = st.text_input("Yeni Şifre", type="password")
-            if st.button("Şifreyi Güncelle"):
-                db = pd.read_csv(USER_DB)
-                old_hp = hashlib.sha256(str.encode(old_p)).hexdigest()
-                if db.loc[db['Username'] == st.session_state.u_data['Username'], 'Password'].values[0] == old_hp:
-                    new_hp = hashlib.sha256(str.encode(new_p)).hexdigest()
-                    db.loc[db['Username'] == st.session_state.u_data['Username'], 'Password'] = new_hp
-                    db.to_csv(USER_DB, index=False)
-                    st.success("Şifre başarıyla değiştirildi!")
-                else: st.error("Mevcut şifre hatalı.")
-
-    # (Diğer Portföy Ekleme ve Analiz kısımları yukarıdaki mantıkla entegre edilmiştir)
+            if st.button("Güncelle"):
+                u_df = pd.read_csv(USER_DB)
+                hp = hashlib.sha256(str.encode(new_p)).hexdigest()
+                u_df.loc[u_df['Username'] == st.session_state.u_data['Username'], 'Password'] = hp
+                u_df.to_csv(USER_DB, index=False)
+                st.success("Şifre değişti!")
